@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Falling (2012)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: rgb(190,190,190); }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+/* ============================================================
+   FALLING — web version for embedding
+   A 2012 Processing sketch, restored 2026.
+   50 balls at 1/64 of the original 30fps. The drawing falls
+   over about 21 minutes, boils at the bottom edge, and a new
+   performance begins roughly every 32 minutes.
+
+   MODE:
+   "clock" — the piece runs on wall-clock time, synced to a
+             2012 epoch. Every visitor, anywhere, sees the
+             same moment of the same ongoing fall. Most will
+             see a still drawing; that is the piece.
+   "visit" — each visitor's fall begins when the page loads,
+             so everyone starts at the fresh constellation.
+   ============================================================ */
+const MODE = "clock";
+const SPEED = 1 / 64;
+const BASE_COUNT = 50;
+const TOTAL_SIM_FRAMES = 900;
+const EPOCH = Date.UTC(2012, 0, 1);
+const LOGICAL_HEIGHT = 400;
+
+/* Original 2012 physics, unaltered. */
+const DIST = 150, RAD = 85, SIM_FPS = 30;
+const PERF_MS = TOTAL_SIM_FRAMES / (SIM_FPS * SPEED) * 1000;
+const ORIGIN = (MODE === "visit") ? Date.now() : EPOCH;
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let W = 500, H = LOGICAL_HEIGHT, COUNT = BASE_COUNT;
+
+let rnd, balls, simFrame, perfIndex = -1;
+function rand(a, b) { return a + rnd() * (b - a); }
+
+class Ball {
+  constructor() { this.x = rand(0, W); this.y = rand(0, H); this.px = this.x; this.py = this.y; this.setInc(); }
+  setInc() { this.incX = rand(-2, 2); this.incY = rand(-2, 3); }
+  step() {
+    this.px = this.x; this.py = this.y;
+    if (this.x > W || this.x < 0) this.incX = -this.incX;
+    if (this.y > H || this.y < 0) this.incY = -this.incY;
+    this.x += this.incX; this.y += this.incY;
+    if (this.x > W) { this.x = W; this.setInc(); }
+    if (this.x < 0) { this.x = 0; this.setInc(); }
+    if (this.y > H) { this.y = H; this.setInc(); }
+    if (this.y < 0) { this.y = 0; this.setInc(); }
+  }
+}
+
+function fit() {
+  const dpr = window.devicePixelRatio || 1;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  canvas.width = vw * dpr; canvas.height = vh * dpr;
+  H = LOGICAL_HEIGHT;
+  W = Math.round(H * (vw / vh));
+  const s = vh / H;
+  ctx.setTransform(dpr * s, 0, 0, dpr * s, 0, 0);
+  ctx.lineCap = "round";
+  COUNT = Math.max(10, Math.round(BASE_COUNT * (W * H) / (500 * 400)));
+  perfIndex = -1;
+}
+
+function startPerformance(idx) {
+  perfIndex = idx;
+  rnd = mulberry32(1987 + idx);
+  balls = [];
+  for (let i = 0; i < COUNT; i++) balls.push(new Ball());
+  simFrame = 0;
+}
+
+function simStep() {
+  for (let i = 0; i < COUNT; i++) {
+    balls[i].step();
+    for (let j = 0; j < i; j++) {
+      const dx = balls[i].x - balls[j].x, dy = balls[i].y - balls[j].y;
+      if (dx * dx + dy * dy <= RAD * RAD) { balls[i].setInc(); balls[j].setInc(); }
+    }
+  }
+  simFrame++;
+}
+
+function render(alpha) {
+  ctx.fillStyle = "rgb(190,190,190)";
+  ctx.fillRect(0, 0, W, H);
+  const n = balls.length;
+  for (let i = 0; i < n; i++) {
+    const b = balls[i];
+    const ix = b.px + (b.x - b.px) * alpha, iy = b.py + (b.y - b.py) * alpha;
+    for (let j = 0; j < i; j++) {
+      const o = balls[j];
+      const jx = o.px + (o.x - o.px) * alpha, jy = o.py + (o.y - o.py) * alpha;
+      const dx = ix - jx, dy = iy - jy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= DIST) {
+        const w = 5 / Math.max(d, 0.0001);
+        const v = Math.min(255, Math.round(w));
+        ctx.strokeStyle = "rgb(" + v + "," + v + "," + v + ")";
+        ctx.lineWidth = Math.min(w, 400);
+        ctx.beginPath();
+        ctx.moveTo(ix, iy);
+        ctx.lineTo(jx, jy);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  const now = Date.now();
+  const idx = Math.floor((now - ORIGIN) / PERF_MS);
+  const frac = ((now - ORIGIN) % PERF_MS) / PERF_MS;
+  const target = frac * TOTAL_SIM_FRAMES;
+  const whole = Math.floor(target);
+  if (idx !== perfIndex || whole < simFrame) startPerformance(idx);
+  while (simFrame < whole) simStep();
+  render(target - whole);
+}
+
+window.addEventListener("resize", fit);
+fit();
+tick();
+</script>
+</body>
+</html>
